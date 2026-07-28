@@ -1,4 +1,4 @@
-FROM node:20-bullseye-slim
+FROM node:20-bookworm-slim
 
 # Installa ffmpeg e python3 (che a volte serve al motore yt-dlp)
 RUN apt-get update && \
