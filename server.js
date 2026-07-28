@@ -94,12 +94,15 @@ app.post('/api/search', async (req, res) => {
 
             originalTitle = titleTag;
             let searchQuery = `${titleTag}`;
+            let spotifyArtist = '';
             if (descTag) {
                 const artistPart = descTag.split('·')[0]?.trim();
                 if (artistPart) {
                     searchQuery += ` ${artistPart}`;
+                    spotifyArtist = artistPart;
                 } else {
                     searchQuery += ` ${descTag}`;
+                    spotifyArtist = descTag;
                 }
             }
             searchQuery += ' audio';
@@ -112,14 +115,38 @@ app.post('/api/search', async (req, res) => {
                 throw new Error('No YouTube videos found matching this query.');
             }
 
-            // Take top 3 results
-            topResults = searchResults.videos.slice(0, 3).map(v => ({
-                title: v.title,
-                url: v.url,
-                thumbnail: v.thumbnail,
-                author: v.author.name,
-                duration: v.timestamp
-            }));
+            // Trova la durata ufficiale usando il primo risultato assoluto (di solito il Topic ufficiale)
+            const targetDuration = searchResults.videos[0].seconds || 0;
+
+            // Filtra i canali Topic per evitare il DRM
+            let validVideos = searchResults.videos.filter(v => 
+                v.author && !v.author.name.toLowerCase().includes('- topic')
+            );
+            
+            if (validVideos.length === 0) {
+                validVideos = searchResults.videos; // Fallback se sono tutti Topic
+            }
+
+            // Ordina i risultati validi per vicinanza alla durata ufficiale
+            if (targetDuration > 0) {
+                validVideos.sort((a, b) => {
+                    const diffA = Math.abs((a.seconds || 0) - targetDuration);
+                    const diffB = Math.abs((b.seconds || 0) - targetDuration);
+                    return diffA - diffB;
+                });
+            }
+
+            // Restituisci un singolo risultato "Spotify" perfetto
+            const bestVideo = validVideos[0];
+            const spotifyImage = $('meta[property="og:image"]').attr('content');
+
+            topResults = [{
+                title: originalTitle,
+                url: bestVideo.url,
+                thumbnail: spotifyImage || bestVideo.thumbnail,
+                author: spotifyArtist || (bestVideo.author ? bestVideo.author.name : 'YouTube'),
+                duration: bestVideo.timestamp
+            }];
         }
 
         res.json({
