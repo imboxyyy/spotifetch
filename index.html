@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpotiFetch — Download Music & Video for Free</title>
+    <meta name="description" content="SpotiFetch is a free desktop app to download music and videos from Spotify, YouTube, TikTok and Instagram in high quality.">
+    <link rel="icon" type="image/png" href="logo.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --green: #1DB954; --green-glow: rgba(29,185,84,0.35);
+            --dark: #0a0a0a; --card: rgba(255,255,255,0.04);
+            --border: rgba(255,255,255,0.08); --text: #e0e0e0; --muted: rgba(255,255,255,0.45);
+        }
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Inter', sans-serif; background: var(--dark); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+
+        .bg { position: fixed; inset: 0; z-index: 0; pointer-events: none;
+            background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(29,185,84,0.12) 0%, transparent 60%),
+                        radial-gradient(ellipse 60% 50% at 80% 80%, rgba(29,185,84,0.06) 0%, transparent 50%); }
+        .grid { position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0.03;
+            background-image: linear-gradient(rgba(255,255,255,1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,1) 1px, transparent 1px);
+            background-size: 60px 60px; }
+
+        nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 1.2rem 5%; background: rgba(10,10,10,0.8); backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border); }
+        .nav-logo { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
+        .nav-logo img { width: 32px; height: 32px; object-fit: contain; }
+        .nav-logo span { font-size: 1.1rem; font-weight: 700; color: #fff; letter-spacing: -0.02em; }
+        .nav-badge { font-size: 0.65rem; font-weight: 600; background: var(--green); color: #000; padding: 0.15rem 0.5rem; border-radius: 100px; letter-spacing: 0.05em; text-transform: uppercase; }
+        .nav-links { display: flex; gap: 2rem; list-style: none; }
+        .nav-links a { color: var(--muted); text-decoration: none; font-size: 0.9rem; font-weight: 500; transition: color .2s; }
+        .nav-links a:hover { color: #fff; }
+
+        .hero { position: relative; z-index: 1; min-height: 100vh;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            text-align: center; padding: 8rem 5% 4rem; }
+        .hero-eyebrow { display: inline-flex; align-items: center; gap: 0.5rem;
+            background: rgba(29,185,84,0.1); border: 1px solid rgba(29,185,84,0.25);
+            border-radius: 100px; padding: 0.4rem 1rem; font-size: 0.8rem; font-weight: 600;
+            color: var(--green); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 2rem;
+            animation: fadeUp 0.6s ease both; }
+        .dot-green { width: 6px; height: 6px; background: var(--green); border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.8)} }
+
+        h1 { font-size: clamp(3rem, 7vw, 6rem); font-weight: 900; line-height: 1.05;
+            letter-spacing: -0.04em; color: #fff; animation: fadeUp 0.6s 0.1s ease both; }
+        h1 .green { color: var(--green); }
+        .hero p { max-width: 520px; margin: 1.5rem auto 0; font-size: 1.15rem; line-height: 1.7;
+            color: var(--muted); animation: fadeUp 0.6s 0.2s ease both; }
+
+        .hero-cta { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center;
+            margin-top: 2.5rem; animation: fadeUp 0.6s 0.3s ease both; }
+
+        .btn-download { display: inline-flex; align-items: center; gap: 0.75rem;
+            background: var(--green); color: #000; font-size: 1rem; font-weight: 700;
+            padding: 0.9rem 2rem; border-radius: 100px; text-decoration: none;
+            box-shadow: 0 0 40px var(--green-glow);
+            transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .btn-download:hover { transform: translateY(-3px) scale(1.04); box-shadow: 0 0 60px var(--green-glow), 0 10px 30px rgba(0,0,0,0.3); }
+
+        .btn-ghost { display: inline-flex; align-items: center; gap: 0.5rem;
+            background: transparent; color: var(--muted); font-size: 1rem; font-weight: 500;
+            padding: 0.9rem 1.5rem; border-radius: 100px; text-decoration: none;
+            border: 1px solid var(--border); transition: all 0.2s ease; }
+        .btn-ghost:hover { color: #fff; border-color: rgba(255,255,255,0.2); background: var(--card); }
+
+        .platform-note { margin-top: 1rem; font-size: 0.8rem; color: var(--muted); animation: fadeUp 0.6s 0.4s ease both; }
+        .platform-note span { color: rgba(255,255,255,0.6); }
+
+        section.features { position: relative; z-index: 1; max-width: 1100px; margin: 6rem auto; padding: 0 5%; }
+        .section-label { text-align: center; font-size: 0.8rem; font-weight: 600; color: var(--green); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 1rem; }
+        .section-title { text-align: center; font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 800; letter-spacing: -0.03em; color: #fff; margin-bottom: 3rem; }
+        .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+        .feature-card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 2rem; transition: all 0.3s ease; }
+        .feature-card:hover { border-color: rgba(29,185,84,0.3); background: rgba(29,185,84,0.04); transform: translateY(-4px); }
+        .feature-icon { width: 48px; height: 48px; border-radius: 14px; background: rgba(29,185,84,0.1); border: 1px solid rgba(29,185,84,0.2); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; margin-bottom: 1.2rem; }
+        .feature-card h3 { font-size: 1.05rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem; }
+        .feature-card p { font-size: 0.9rem; color: var(--muted); line-height: 1.6; }
+
+        .platforms { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto 6rem; padding: 0 5%; text-align: center; }
+        .platform-pills { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; margin-top: 2rem; }
+        .platform-pill { display: flex; align-items: center; gap: 0.6rem; background: var(--card); border: 1px solid var(--border); border-radius: 100px; padding: 0.6rem 1.2rem; font-size: 0.9rem; font-weight: 600; color: #fff; transition: all 0.2s ease; }
+        .platform-pill:hover { border-color: rgba(255,255,255,0.2); transform: scale(1.05); }
+
+        .steps { position: relative; z-index: 1; max-width: 900px; margin: 0 auto 6rem; padding: 0 5%; }
+        .steps-list { display: flex; flex-direction: column; gap: 1.5rem; margin-top: 2rem; }
+        .step { display: flex; align-items: flex-start; gap: 1.5rem; background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 1.5rem 2rem; }
+        .step-num { width: 40px; height: 40px; border-radius: 12px; background: rgba(29,185,84,0.15); border: 1px solid rgba(29,185,84,0.3); color: var(--green); font-size: 1rem; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .step-text h4 { font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem; }
+        .step-text p { font-size: 0.88rem; color: var(--muted); line-height: 1.5; }
+
+        .cta-bottom { position: relative; z-index: 1; text-align: center; padding: 5rem 5%;
+            background: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(29,185,84,0.08) 0%, transparent 70%);
+            border-top: 1px solid var(--border); }
+        .cta-bottom h2 { font-size: clamp(2rem, 4vw, 3.5rem); font-weight: 900; letter-spacing: -0.04em; color: #fff; margin-bottom: 1rem; }
+        .cta-bottom p { font-size: 1.1rem; color: var(--muted); margin-bottom: 2.5rem; }
+
+        footer { position: relative; z-index: 1; text-align: center; padding: 2rem; border-top: 1px solid var(--border); font-size: 0.85rem; color: var(--muted); }
+        footer a { color: var(--green); text-decoration: none; }
+
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+        @media (max-width: 600px) { .nav-links { display: none; } }
+    </style>
+</head>
+<body>
+    <div class="bg"></div>
+    <div class="grid"></div>
+
+    <!-- HERO -->
+    <section class="hero">
+        <div class="hero-eyebrow"><span class="dot-green"></span>Free & Open Source</div>
+        <img src="logo.png" alt="SpotiFetch Logo" style="width: 80px; height: 80px; margin-bottom: 2rem;">
+        <h1>Download <span class="green">anything</span>.<br>Keep it forever.</h1>
+        <p style="font-size: 1.25rem;">A free desktop app to download songs, albums and videos from Spotify, YouTube, TikTok and Instagram in high quality — no account, no limits, no ads.</p>
+        <div class="hero-cta">
+            <a href="https://github.com/imboxyyy/spotifetch/releases/latest" class="btn-download" style="padding: 1.1rem 2.5rem; font-size: 1.1rem;">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download for Windows
+            </a>
+        </div>
+        <p class="platform-note"><span>Windows 10/11</span> · 64-bit · No installation required</p>
+    </section>
+
+    <footer style="position: absolute; bottom: 0; width: 100%; border: none;">
+        <p>Made with ♥ by <a href="#" target="_blank">@dollarsfarm</a></p>
+    </footer>
+</body>
+</html>
