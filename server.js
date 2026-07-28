@@ -264,9 +264,11 @@ app.post('/api/download', async (req, res) => {
             }
         }
 
-        // Per YouTube: prova prima via Invidious (nessun blocco datacenter), poi fallback su yt-dlp
+        // Per YouTube: su cloud usa Invidious (no blocco datacenter), in locale va dritto a yt-dlp
         const isYouTube = videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be');
-        if (isYouTube) {
+        const isCloud = !!process.env.RENDER; // Render.com imposta RENDER=true automaticamente
+        
+        if (isYouTube && isCloud) {
             const videoId = extractYouTubeId(videoUrl);
             if (videoId) {
                 console.log(`Trying Invidious proxy for: ${videoId}`);
