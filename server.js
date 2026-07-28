@@ -14,11 +14,80 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Salva i cookie di YouTube da env var in un file temp (necessario per i server cloud)
-const COOKIES_FILE = path.join(os.tmpdir(), 'youtube_cookies.txt');
-if (process.env.YOUTUBE_COOKIES) {
-    fs.writeFileSync(COOKIES_FILE, process.env.YOUTUBE_COOKIES, 'utf8');
-    console.log('YouTube cookies loaded from environment variable.');
+// Lista di istanze Invidious pubbliche (verranno provate in cascata)
+const INVIDIOUS_INSTANCES = [
+    'https://invidious.fdn.fr',
+    'https://yewtu.be',
+    'https://invidious.nerdvpn.de',
+    'https://inv.tux.pizza',
+    'https://invidious.privacyredirect.com'
+];
+
+// Estrai l'ID del video da un URL di YouTube
+function extractYouTubeId(url) {
+    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/);
+    return match ? match[1] : null;
+}
+
+// Scarica un video/audio tramite Invidious proxy (nessun cookie necessario)
+async function downloadViaInvidious(videoId, format, quality, tempFilename, ext) {
+    for (const instance of INVIDIOUS_INSTANCES) {
+        try {
+            console.log(`Trying Invidious instance: ${instance}`);
+            const infoUrl = `${instance}/api/v1/videos/${videoId}?fields=adaptiveFormats,formatStreams`;
+            const { data: info } = await axios.get(infoUrl, { timeout: 8000 });
+
+            if (format === 'mp4') {
+                // Cerca il formato video + audio più vicino alla qualità richiesta
+                const targetHeight = quality ? parseInt(quality) : 1080;
+                const videoFormats = (info.adaptiveFormats || []).filter(f => f.type && f.type.startsWith('video/mp4'));
+                const audioFormats = (info.adaptiveFormats || []).filter(f => f.type && f.type.startsWith('audio/'));
+
+                if (videoFormats.length === 0) continue;
+
+                const best = videoFormats.sort((a, b) => {
+                    const da = Math.abs((a.resolution ? parseInt(a.resolution) : 0) - targetHeight);
+                    const db = Math.abs((b.resolution ? parseInt(b.resolution) : 0) - targetHeight);
+                    return da - db;
+                })[0];
+
+                const bestAudio = audioFormats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+
+                const videoProxyUrl = `${instance}/latest_version?id=${videoId}&itag=${best.itag}`;
+                const audioProxyUrl = bestAudio ? `${instance}/latest_version?id=${videoId}&itag=${bestAudio.itag}` : null;
+
+                // Scarica video e audio separatamente poi uniscili con ffmpeg
+                const tempVideo = tempFilename.replace('.mp4', '_video.mp4');
+                const tempAudio = tempFilename.replace('.mp4', '_audio.m4a');
+
+                const [vRes, aRes] = await Promise.all([
+                    axios({ method: 'GET', url: videoProxyUrl, responseType: 'arraybuffer', timeout: 60000 }),
+                    audioProxyUrl ? axios({ method: 'GET', url: audioProxyUrl, responseType: 'arraybuffer', timeout: 60000 }) : Promise.resolve(null)
+                ]);
+
+                fs.writeFileSync(tempVideo, Buffer.from(vRes.data));
+                if (aRes) fs.writeFileSync(tempAudio, Buffer.from(aRes.data));
+
+                return { success: true, tempVideo, tempAudio: aRes ? tempAudio : null };
+
+            } else {
+                // Solo audio MP3
+                const audioFormats = (info.adaptiveFormats || []).filter(f => f.type && f.type.startsWith('audio/'));
+                if (audioFormats.length === 0) continue;
+
+                const bestAudio = audioFormats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+                const audioProxyUrl = `${instance}/latest_version?id=${videoId}&itag=${bestAudio.itag}`;
+
+                const aRes = await axios({ method: 'GET', url: audioProxyUrl, responseType: 'arraybuffer', timeout: 60000 });
+                fs.writeFileSync(tempFilename.replace('.mp3', '_raw.m4a'), Buffer.from(aRes.data));
+
+                return { success: true, rawAudio: tempFilename.replace('.mp3', '_raw.m4a') };
+            }
+        } catch (err) {
+            console.warn(`Invidious ${instance} failed: ${err.message}`);
+        }
+    }
+    return { success: false };
 }
 
 app.post('/api/search', async (req, res) => {
@@ -181,34 +250,12 @@ app.post('/api/download', async (req, res) => {
         
         console.log(`Downloading and converting to temp file: ${tempFilename} (Format: ${ext})`);
 
-        let dlOptions = {
-            ffmpegLocation: ffmpegPath,
-            output: tempFilename,
-            noCheckCertificates: true,
-            noWarnings: true,
-            addHeader: [
-                'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36'
-            ]
-        };
-
-        if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
-            dlOptions.extractorArgs = 'youtube:player-client=android';
-            // Usa i cookie se disponibili (essenziali su server cloud per evitare il blocco bot)
-            if (process.env.YOUTUBE_COOKIES && fs.existsSync(COOKIES_FILE)) {
-                dlOptions.cookies = COOKIES_FILE;
-            }
-        }
-        
         if (videoUrl.includes('tiktok.com')) {
             console.log(`Fetching TikTok download URL via TikWM for: ${videoUrl}`);
             const { data: tikData } = await axios.get(`https://tikwm.com/api/?url=${encodeURIComponent(videoUrl)}`);
             if (tikData && tikData.code === 0 && tikData.data) {
                 const directUrl = (format === 'mp4') ? tikData.data.play : (tikData.data.music_info && tikData.data.music_info.play ? tikData.data.music_info.play : tikData.data.music || tikData.data.play);
-                const response = await axios({
-                    method: 'GET',
-                    url: directUrl,
-                    responseType: 'stream'
-                });
+                const response = await axios({ method: 'GET', url: directUrl, responseType: 'stream' });
                 res.setHeader('Content-Disposition', `attachment; filename="${sanitizedTitle}.${ext}"`);
                 response.data.pipe(res);
                 return;
@@ -216,6 +263,65 @@ app.post('/api/download', async (req, res) => {
                 return res.status(500).json({ error: "Failed to download TikTok video via API." });
             }
         }
+
+        // Per YouTube: prova prima via Invidious (nessun blocco datacenter), poi fallback su yt-dlp
+        const isYouTube = videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be');
+        if (isYouTube) {
+            const videoId = extractYouTubeId(videoUrl);
+            if (videoId) {
+                console.log(`Trying Invidious proxy for: ${videoId}`);
+                const result = await downloadViaInvidious(videoId, format, quality, tempFilename, ext);
+
+                if (result.success) {
+                    const ffmpeg = require('fluent-ffmpeg');
+                    ffmpeg.setFfmpegPath(ffmpegPath);
+
+                    await new Promise((resolve, reject) => {
+                        let cmd = ffmpeg();
+                        if (format === 'mp4') {
+                            cmd = cmd.input(result.tempVideo);
+                            if (result.tempAudio) cmd = cmd.input(result.tempAudio);
+                            cmd.outputOptions(['-c:v copy', '-c:a aac', '-movflags faststart'])
+                               .output(tempFilename)
+                               .on('end', resolve)
+                               .on('error', reject)
+                               .run();
+                        } else {
+                            cmd.input(result.rawAudio)
+                               .audioCodec('libmp3lame')
+                               .audioBitrate(192)
+                               .output(tempFilename)
+                               .on('end', resolve)
+                               .on('error', reject)
+                               .run();
+                        }
+                    });
+
+                    // Pulizia file temporanei
+                    [result.tempVideo, result.tempAudio, result.rawAudio].forEach(f => {
+                        if (f && fs.existsSync(f)) fs.unlinkSync(f);
+                    });
+
+                    res.download(tempFilename, `${sanitizedTitle}.${ext}`, () => {
+                        fs.unlink(tempFilename, () => {});
+                    });
+                    return;
+                }
+                console.log('All Invidious instances failed, falling back to yt-dlp...');
+            }
+        }
+
+        // Fallback: yt-dlp classico (funziona in locale, potrebbe dare 403 su cloud)
+        let dlOptions = {
+            ffmpegLocation: ffmpegPath,
+            output: tempFilename,
+            noCheckCertificates: true,
+            noWarnings: true,
+            extractorArgs: 'youtube:player-client=android,mweb',
+            addHeader: [
+                'user-agent:Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Mobile Safari/537.36'
+            ]
+        };
 
         if (format === 'mp4') {
             if (quality) {
@@ -231,34 +337,19 @@ app.post('/api/download', async (req, res) => {
         }
 
         const audioProcess = youtubedl.exec(videoUrl, dlOptions);
-
-        audioProcess.catch(err => {
-            console.error('youtube-dl-exec promise rejected:', err.message);
-        });
-
+        audioProcess.catch(err => { console.error('yt-dlp rejected:', err.message); });
         audioProcess.on('close', (code) => {
-            console.log(`yt-dlp process exited with code ${code}`);
             if (code === 0) {
                 res.download(tempFilename, `${sanitizedTitle}.${ext}`, (err) => {
-                    if (err) {
-                        console.error('Error sending file:', err);
-                    }
-                    fs.unlink(tempFilename, (unlinkErr) => {
-                        if (unlinkErr) console.error('Error deleting temp file:', unlinkErr);
-                    });
+                    if (err) console.error('Error sending file:', err);
+                    fs.unlink(tempFilename, () => {});
                 });
             } else {
-                if (!res.headersSent) {
-                    res.status(500).json({ error: 'Error 403 or YouTube blocked the request.' });
-                }
+                if (!res.headersSent) res.status(500).json({ error: 'Download failed. YouTube is blocking server requests.' });
             }
         });
-
         audioProcess.on('error', (err) => {
-            console.error('yt-dlp error event:', err);
-            if (!res.headersSent) {
-                res.status(500).json({ error: 'Error during conversion with yt-dlp.' });
-            }
+            if (!res.headersSent) res.status(500).json({ error: 'Error during download.' });
         });
 
     } catch (error) {
