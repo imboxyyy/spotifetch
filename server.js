@@ -14,6 +14,13 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
+// Salva i cookie di YouTube da env var in un file temp (necessario per i server cloud)
+const COOKIES_FILE = path.join(os.tmpdir(), 'youtube_cookies.txt');
+if (process.env.YOUTUBE_COOKIES) {
+    fs.writeFileSync(COOKIES_FILE, process.env.YOUTUBE_COOKIES, 'utf8');
+    console.log('YouTube cookies loaded from environment variable.');
+}
+
 app.post('/api/search', async (req, res) => {
     const { url, category } = req.body;
     
@@ -186,6 +193,10 @@ app.post('/api/download', async (req, res) => {
 
         if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
             dlOptions.extractorArgs = 'youtube:player-client=android';
+            // Usa i cookie se disponibili (essenziali su server cloud per evitare il blocco bot)
+            if (process.env.YOUTUBE_COOKIES && fs.existsSync(COOKIES_FILE)) {
+                dlOptions.cookies = COOKIES_FILE;
+            }
         }
         
         if (videoUrl.includes('tiktok.com')) {
