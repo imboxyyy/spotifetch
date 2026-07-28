@@ -183,6 +183,10 @@ app.post('/api/download', async (req, res) => {
                 'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36'
             ]
         };
+
+        if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
+            dlOptions.extractorArgs = 'youtube:player-client=android';
+        }
         
         if (videoUrl.includes('tiktok.com')) {
             console.log(`Fetching TikTok download URL via TikWM for: ${videoUrl}`);
